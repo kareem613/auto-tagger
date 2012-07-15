@@ -20,7 +20,7 @@ namespace Pocket_AutoTagger
             var pt = kernel.Get<PocketTagger>();
             
             pt.SemanticProxyLookupEnabled = true;
-            pt.LoadInstructions("kareems_tags.tgr");
+            pt.LoadInstructions("sample_tags.tgr");
             var modifiedItems = pt.UpdateUntaggedItems(DateTime.Now.Subtract(new TimeSpan(5,0,0,0)));
             Console.WriteLine(String.Format("Tagged {0} items.",modifiedItems.Count()));
             Console.ReadLine();
