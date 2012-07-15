@@ -27,7 +27,12 @@ namespace SemanticProxy
         public IEnumerable<string> GetCategory(string url)
         {
             var xml = QueryUrl(url);
-            
+
+            if (String.IsNullOrWhiteSpace(xml))
+            {
+                return new List<string>();
+            }
+
             XNamespace rdfns = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
             XNamespace cns = "http://s.opencalais.com/1/pred/";
             

@@ -5,11 +5,15 @@ using System.Text;
 using Net.SuddenElfilio.RilSharp;
 using System.Web;
 using SemanticProxy;
+using log4net;
+using System.Reflection;
 
 namespace Pocket_AutoTagger
 {
     class PocketTagger
     {
+        private static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
         public Credentials UserCredentials { get; set; }
         public IRilClient Client { get; set; }
         public ISemanticProxyClient SemanticProxyClient { get; set; }
@@ -37,47 +41,75 @@ namespace Pocket_AutoTagger
 
             var items = GetItemsToTag(since);
             
-            List<RilListItem> modifiedItems = new List<RilListItem>();
-            Console.WriteLine(String.Format("Retreived {0} items.", items.Items.Count));
-            foreach (var item in items.Items)
+            List<RilListItem> allModifiedItems = new List<RilListItem>();
+            
+
+            
+            int pageSize = 10;
+            int totalPages = (int)Math.Ceiling((decimal)items.Items.Count / (decimal)pageSize);
+
+            Log.InfoFormat("Analyzing {0} items, {1} per set. Total sets: {2} ", items.Items.Count, pageSize, totalPages);
+
+
+            for (int currentPage = 0; currentPage <= totalPages; currentPage++)
             {
-                
-                var applicableTagRules = TagRules.Where(i => i.HasMatch(item.Value));
-                foreach(var tagRule in applicableTagRules)
+                int currentOffset = currentPage * pageSize;
+
+                var modifiedItemsSet = TagItems(items.Items.Skip(currentOffset).Take(pageSize));
+
+                if (modifiedItemsSet.Count > 0)
                 {
-                    bool itemModified = AddTag(item.Value,tagRule.Tag);
+                    Log.InfoFormat("Tagging {0} articles in Pocket.", modifiedItemsSet.Count);
+                    var result = Client.Send(SendType.Update_tags, modifiedItemsSet);
+                    allModifiedItems.AddRange(modifiedItemsSet);
+                }
+                
+            }
+            return allModifiedItems;
+        }
+
+        private List<RilListItem> TagItems(IEnumerable<KeyValuePair<string,RilListItem>> items)
+        {
+            var modifiedItems = new List<RilListItem>();
+            foreach (var item in items)
+            {
+
+                var applicableTagRules = TagRules.Where(i => i.HasMatch(item.Value));
+                foreach (var tagRule in applicableTagRules)
+                {
+                    bool itemModified = AddTag(item.Value, tagRule.Tag);
 
                     if (itemModified)
                     {
                         modifiedItems.Add(item.Value);
-                        Console.WriteLine(String.Format("{0}: {1}", tagRule.Tag, item.Value.Url));
+                        Log.DebugFormat("{0}: {1}", tagRule.Tag, item.Value.Url);
                     }
                 }
 
                 if (SemanticProxyLookupEnabled)
                 {
-                    try{
-                    IEnumerable<string> cats = SemanticProxyClient.GetCategory(item.Value.Url);
-                    foreach (string cat in cats)
+                    try
                     {
-                        if (cat.ToLower() != "other")
+                        IEnumerable<string> cats = SemanticProxyClient.GetCategory(item.Value.Url);
+                        foreach (string cat in cats)
                         {
-                            if (AddTag(item.Value, cat))
+                            if (cat.ToLower() != "other")
                             {
-                                modifiedItems.Add(item.Value);
-                                Console.WriteLine(String.Format("s-{0}: {1}", cat, item.Value.Url));
+                                if (AddTag(item.Value, cat))
+                                {
+                                    modifiedItems.Add(item.Value);
+                                    Log.DebugFormat("s-{0}: {1}", cat, item.Value.Url);
+                                }
                             }
                         }
                     }
-                    }
-                    catch (System.Net.WebException)
+                    catch (System.Net.WebException we)
                     {
-                        //log this
+                        Log.Error("Failed Semantic Proxy lookup.", we);
                     }
                 }
-               
+
             }
-            var result = Client.Send(SendType.Update_tags, modifiedItems);
             return modifiedItems;
         }
 
